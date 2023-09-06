@@ -1,0 +1,144 @@
+---
+title: "fortnitetracking"
+output: html_document
+date: "2023-07-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+# loading in packages
+library(tidyverse)
+library(readxl)
+library(naniar)
+data <- read_excel("forttrack_0720.xlsx")
+
+# checking data types
+summary(data)
+
+# converting factors when needed
+data$GameType <- factor(data$GameType)
+data$BuildYN <- factor(data$BuildYN)
+data$DamageDifference <- data$y07_DamageDiff
+#selecting only relevant columns
+data <- data %>% select(GameCount, GameType, BuildYN, Eliminations,
+                        Assists, DamageDealt, DamageTaken, Place, Percentile, DamageDifference)
+
+
+```
+
+
+```{r}
+# xx data cleaning
+
+# identifying missing data
+vis_miss(data)
+
+# removing data with no "Places"
+data <- data[!is.na(data$Place), ]
+
+# removing data where percentiles are not possible
+data <- data %>% filter(Percentile > 0 & Percentile <= 1)
+
+
+# checking for outliers
+summary(data)
+
+#new gamecount variable
+vector_of_numbers <- seq(1, nrow(data))
+data <- data %>% arrange(GameCount) %>% mutate(GameCount = vector_of_numbers)
+```
+
+
+
+```{r}
+#xx Exploratory Data Analysis
+
+# How many eliminations do I typically get?
+ggplot(data, aes(x = Eliminations)) +
+  geom_histogram(binwidth = .99, boundary = 0, fill = "steelblue", color = "black") + scale_x_continuous(breaks = seq(0, 11, by = 1))  
+
+summary(data$Eliminations)
+
+
+# does eliminations vary by game type?
+data %>% group_by(GameType) %>% summarize(mean_elims = mean(Eliminations)) %>% ggplot(aes(x = GameType, y = mean_elims)) + geom_col() + labs(
+  title = "Average eliiminations is higher in \nthe larger (more casual) team formats",
+  x = "Number of players per team",
+  y = "Average Eliminations"
+)
+
+# what about "assists?" do those vary by types as well?
+data %>% group_by(GameType) %>% summarize(mean_assists = mean(Assists)) %>% ggplot(aes(x = GameType, y = mean_assists)) + geom_col()
+
+```
+
+
+```{r}
+# xx creating a unified "gamescore" metric
+# Assuming your dataframe is named 'data' and the numeric columns are 'var1', 'var2', 'var3', and 'var4'
+
+# Step 1: Normalize each column
+data$n_Eliminations <- scale(data$Eliminations)
+data$n_DamageDifference <- scale(data$DamageDifference)
+data$n_Percentile <- scale(data$Percentile)
+data$n_Assists <- scale(data$Assists)
+
+# Step 2: Define weights for each variable
+eliminations_weight <- 0.4
+damagedifference_weight <- 0.3
+percentile_weight <- 0.2
+assists_weight <- 0.1
+
+# Step 3: Create the unified "score" metric
+data$GameScore <- (data$n_Eliminations * eliminations_weight) + 
+              (data$n_DamageDifference * damagedifference_weight) + 
+              (data$n_Percentile * percentile_weight) + 
+              (data$n_Assists * assists_weight)
+
+
+summary(data$GameScore)
+
+```
+
+
+```{r}
+# xx lets look at game score
+
+
+# what does the distribution of gamescore look like?
+ggplot(data, aes(GameScore)) + geom_histogram() + labs(
+  title = "Distribution of gamescore",
+  x = "GameScore",
+  y = "Count"
+)
+# does gamescore vary by game type?
+data %>% group_by(GameType) %>% summarize(mean_gamescore = mean(GameScore)) %>% ggplot(aes(x = GameType, y = mean_gamescore)) + geom_col() + labs(
+  title = "Average Gamescore is better in larger \n(more casual) team formats",
+  x = "Number of players on team",
+  y = "Average Gamescore"
+)
+
+# does gamescore vary by game type?
+data %>% group_by(BuildYN) %>% summarize(mean_gamescore = mean(GameScore)) %>% ggplot(aes(x = BuildYN, y = mean_gamescore)) + geom_col() + ggtitle(
+    "Average gamescore is better in \nno build games") + labs(
+  y = "Average Gamescore",
+  x = "No Build vs. Build"
+)
+
+
+```
+
+```{r}
+# xx answering the question: is gamescore improving as gamecount increases after accounting for the format of the game itself?
+
+M <- lm(GameScore~GameCount+GameType+BuildYN, data = data)
+summary(M) 
+
+
+```
+
